@@ -13,24 +13,33 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.firebase.client.Firebase;
+import com.firebase.client.FirebaseError;
+import com.firebase.client.ServerValue;
 import com.udacity.firebase.shoppinglistplusplus.R;
 import com.udacity.firebase.shoppinglistplusplus.model.ShoppingList;
 import com.udacity.firebase.shoppinglistplusplus.utils.Constants;
+import com.udacity.firebase.shoppinglistplusplus.utils.Utils;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Adds a new shopping list
  */
 public class AddListDialogFragment extends DialogFragment {
+    String mEncodedEmail;
     EditText mEditTextListName;
 
     /**
      * Public static constructor that creates fragment and
      * passes a bundle with data into it when adapter is created
      */
-    public static AddListDialogFragment newInstance() {
+    public static AddListDialogFragment newInstance(String encodedEmail) {
         AddListDialogFragment addListDialogFragment = new AddListDialogFragment();
         Bundle bundle = new Bundle();
+        bundle.putString(Constants.KEY_ENCODED_EMAIL, encodedEmail);
         addListDialogFragment.setArguments(bundle);
         return addListDialogFragment;
     }
@@ -41,6 +50,7 @@ public class AddListDialogFragment extends DialogFragment {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        mEncodedEmail = getArguments().getString(Constants.KEY_ENCODED_EMAIL);
     }
 
     /**
@@ -92,14 +102,57 @@ public class AddListDialogFragment extends DialogFragment {
      * Add new active list
      */
     public void addShoppingList() {
-
-        Firebase ref = new Firebase(Constants.FIREBSE_URL);
         String userEnteredName = mEditTextListName.getText().toString();
-        String owner = "Anonymous Owner";
-        ShoppingList currentList = new ShoppingList(userEnteredName, owner);
-        ref.child("activeList").setValue(currentList);
-//        ref.child("listName").setValue(userEnteredName);
-    }
 
+        /**
+         * If EditText input is not empty
+         */
+        if (!userEnteredName.equals("")) {
+
+            /**
+             * Create Firebase references
+             */
+            Firebase listsRef = new Firebase(Constants.FIREBASE_URL_ACTIVE_LISTS);
+            final Firebase firebaseRef = new Firebase(Constants.FIREBASE_URL);
+
+            Firebase newListRef = listsRef.push();
+
+            /* Save listsRef.push() to maintain same random Id */
+            final String listId = newListRef.getKey();
+
+            /* HashMap for data to update */
+            HashMap<String, Object> updateShoppingListData = new HashMap<>();
+
+            /**
+             * Set raw version of date to the ServerValue.TIMESTAMP value and save into
+             * timestampCreatedMap
+             */
+            HashMap<String, Object> timestampCreated = new HashMap<>();
+            timestampCreated.put(Constants.FIREBASE_PROPERTY_TIMESTAMP, ServerValue.TIMESTAMP);
+
+            /* Build the shopping list */
+            ShoppingList newShoppingList = new ShoppingList(userEnteredName, mEncodedEmail,
+                    timestampCreated);
+
+            HashMap<String, Object> shoppingListMap = (HashMap<String, Object>)
+                    new ObjectMapper().convertValue(newShoppingList, Map.class);
+
+            Utils.updateMapForAllWithValue(null, listId, mEncodedEmail,
+                    updateShoppingListData, "", shoppingListMap);
+
+            /* Do the update */
+            firebaseRef.updateChildren(updateShoppingListData, new Firebase.CompletionListener() {
+                @Override
+                public void onComplete(FirebaseError firebaseError, Firebase firebase) {
+                    /* Now that we have the timestamp, update the reversed timestamp */
+                    Utils.updateTimestampReversed(firebaseError, "AddList", listId,
+                            null, mEncodedEmail);
+                }
+            });
+
+            /* Close the dialog fragment */
+            AddListDialogFragment.this.getDialog().cancel();
+        }
+    }
 }
 
